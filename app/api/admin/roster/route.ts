@@ -1,5 +1,6 @@
+import {select,rpc} from '@/lib/supabase';
 import {adminUser} from '@/lib/admin-auth';
-import {config,db,hash,json,roster,sameOrigin} from '@/lib/portal';
+import {config,hash,json,roster,sameOrigin} from '@/lib/portal';
 export const dynamic='force-dynamic';
 async function access(req:Request){
  const supplied=req.headers.get('X-Roster-Import')||'';
@@ -24,18 +25,15 @@ export async function POST(req:Request){
   incoming.set(person,{docType:type,name});
  }
  const payloadHash=await hash(JSON.stringify({source,people:[...incoming].sort(([a],[b])=>a.localeCompare(b))}));
- const old=await db().prepare('SELECT payload_hash,stats FROM roster_imports WHERE id=?').bind(importId).first<{payload_hash:string;stats:string}>();
+ const old=(await select('roster_imports',{select:'payload_hash,stats',id:'eq.'+importId,limit:'1'}))[0];
  if(old){if(old.payload_hash!==payloadHash)return json({error:'Este identificador ya se usó para otra relación.'},409);return json({...JSON.parse(old.stats),replayed:true})}
- const known=new Map(Object.entries(roster()));const stored=await db().prepare('SELECT person,name FROM people').all();for(const p of stored.results)known.set(String(p.person),String(p.name));
+ const known=new Map(Object.entries(roster()));const stored=await select('people',{select:'person,name',limit:'10000'});for(const p of stored)known.set(String(p.person),String(p.name));
  let added=0,updated=0,unchanged=0;for(const [person,row] of incoming){if(!known.has(person))added++;else if(known.get(person)!==row.name)updated++;else unchanged++}
  const retained=[...known.keys()].filter(id=>!incoming.has(id)).length;
  const stats={received:b.people.length,unique:incoming.size,duplicates,added,updated,unchanged,retained,total:known.size+added,deleted:0};
  if(b.dryRun===true)return json({...stats,dryRun:true});
- const now=new Date().toISOString();
- const writes=[];const entries=[...incoming];for(let i=0;i<entries.length;i+=20){const chunk=entries.slice(i,i+20);writes.push(db().prepare('INSERT INTO people (person,doc_type,name,created_at,updated_at) VALUES '+chunk.map(()=>'(?,?,?,?,?)').join(',')+' ON CONFLICT(person) DO UPDATE SET name=excluded.name,doc_type=excluded.doc_type,updated_at=excluded.updated_at WHERE people.name<>excluded.name OR people.doc_type<>excluded.doc_type').bind(...chunk.flatMap(([person,row])=>[person,row.docType,row.name,now,now])))}
- const snapshot='SELECT id,person,name,score,total,version,date,consent,answers,training_id,training_revision,snapshot FROM attempts ORDER BY id';
- const results=await db().batch([db().prepare(snapshot),...writes,db().prepare('INSERT INTO roster_imports (id,source,payload_hash,stats,created_at) VALUES (?,?,?,?,?)').bind(importId,source,payloadHash,JSON.stringify(stats),now),db().prepare(snapshot)]);
- const before=JSON.stringify(results[0].results),after=JSON.stringify(results[results.length-1].results);
- return json({...stats,attemptsPreserved:before===after,attemptsCount:results[0].results.length});
+ const saved=await rpc('petro_import_roster',{p_id:importId,p_source:source,p_hash:payloadHash,p_stats:stats,p_people:[...incoming].map(([person,row])=>({person,doc_type:row.docType,name:row.name}))});
+ return json(saved);
+
  }catch{return json({error:'No se pudo importar la relación. Verifica el archivo e intenta nuevamente.'},500)}
 }
