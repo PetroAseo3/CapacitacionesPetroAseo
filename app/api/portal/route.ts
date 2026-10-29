@@ -1,3 +1,4 @@
+import {currentAttempts} from '@/lib/current-attempts';
 import {select,insert} from '@/lib/supabase';
 import {json,config,hash,sign,verify,staff,personName,limit,sameOrigin,catalog,getTraining,availability,savedResult} from '@/lib/portal';
 export const dynamic='force-dynamic';
@@ -11,7 +12,7 @@ return json({name,token:await sign({person,scope:'staff',exp:Date.now()+14400000
 if(b.action==='submit'){
 const session=await verify(b.token,'exam');if(!session)return json({error:'La sesión venció. Ingresa nuevamente con tu documento.'},401);
 const name=await personName(session.person);if(!name)return json({error:'Registro no disponible. Consulta a tu supervisor.'},403);
-const existing=(await select('attempts',{select:'*',id:'eq.'+session.id,person:'eq.'+session.person,limit:'1'}))[0];if(existing)return json(savedResult(existing));
+const existing=(await select('attempts',{select:'*',id:'eq.'+session.id,person:'eq.'+session.person,limit:'1'}))[0];if(existing){const rs=await select('resets',{select:'person,training_id,reset_at',person:'eq.'+session.person});if(!currentAttempts([existing],rs).length)return json({error:'Este examen fue reiniciado. Comienza uno nuevo desde tus capacitaciones.'},409);return json(savedResult(existing));}
 const t=await getTraining(session.trainingId);if(!t||availability(t)!=='open')return json({error:'Esta capacitación no está disponible en este momento.'},403);
 const resets=await select('resets',{select:'reset_at,training_id',person:'eq.'+session.person});if(resets.some(r=>(r.training_id==='*'||r.training_id===t.id)&&Date.parse(r.reset_at)>Number(session.issuedAt||0)))return json({error:'La administración reinició esta capacitación. Vuelve al listado y comienza nuevamente.'},409);
 if(t.revision!==session.revision)return json({error:'La capacitación cambió. Vuelve al listado y comienza la nueva versión.'},409);
@@ -23,7 +24,7 @@ const saved=(await select('attempts',{select:'*',id:'eq.'+session.id,person:'eq.
 const user=await staff(b.token);if(!user)return json({error:'La sesión venció. Ingresa nuevamente con tu documento.'},401);
 if(b.action==='ranking')return json({error:'La tabla de resultados compartidos ya no está disponible.'},410);
 if(b.action==='list')return json({trainings:await catalog(user.person)});
-if(b.action==='history'){const r=await select('attempts',{select:'*',person:'eq.'+user.person,order:'date.desc',limit:'100'});return json({results:r.map((r:any)=>({...savedResult(r),trainingId:r.training_id,revision:r.training_revision}))})}
+if(b.action==='history'){const r=await select('attempts',{select:'*',person:'eq.'+user.person,order:'date.desc',limit:'100'});return json({results:currentAttempts(r,await select('resets',{select:'person,training_id,reset_at',person:'eq.'+user.person})).map((r:any)=>({...savedResult(r),trainingId:r.training_id,revision:r.training_revision}))})}
 if(b.action==='open'){
 const t=await getTraining(String(b.trainingId||''));if(!t||availability(t)!=='open')return json({error:'La capacitación no está disponible. Revisa sus fechas de apertura y cierre.'},403);
 return json({training:{id:t.id,title:t.title,description:t.description,videos:t.videos,questions:t.questions.map(({answer,...q})=>q),revision:t.revision,endsAt:t.endsAt},examToken:await sign({person:user.person,scope:'exam',trainingId:t.id,revision:t.revision,issuedAt:Date.now(),id:crypto.randomUUID(),exp:Date.now()+14400000})})}
