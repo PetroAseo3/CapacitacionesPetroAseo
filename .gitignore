@@ -48,3 +48,4 @@ npm.cmd
 
 # Vercel local project binding
 .vercel/
+.vercel

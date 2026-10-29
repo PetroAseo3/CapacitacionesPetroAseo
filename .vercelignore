@@ -1,0 +1,10 @@
+.env*
+.dev.vars*
+.wrangler/
+.sites-runtime/
+.openai/
+node_modules/
+.next/
+.git/
+work/
+outputs/
