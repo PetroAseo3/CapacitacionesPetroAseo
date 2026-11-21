@@ -27,3 +27,10 @@ Node >=22.13.0. npm ci, npm run dev. Compilación: npm run build. Crear un .env.
 El sitio original continúa independiente. No cambiar su configuración ni borrar datos durante el traslado. Este repositorio no contiene padrón real, resultados reales ni secretos. Ver PERSONNEL_UPDATES.md para importaciones acumulativas. El panel Personal permite buscar y agregar personas y reiniciar una o todas sus capacitaciones, conservando el historial. Los límites de intentos y las exclusiones no están implementados.
 
 Las carpetas scripts, worker, examples y drizzle conservan referencias del alojamiento anterior; Vercel usa Next.js y supabase/migrations. No ejecutar las migraciones SQLite de drizzle en Supabase.
+
+## Resultados en Excel
+En Administración → Capacitaciones, Descargar resultados Excel exporta todas las capacitaciones publicadas. Dentro de cada capacitación, Resultados permite descargar el reporte de esa capacitación. Personal también ofrece Resultados en Excel para la selección actual.
+
+La descarga .xlsx incluye una fila por persona y capacitación, aun si nunca rindió. Los pendientes tienen 0%, sin fecha de examen. Se considera la versión actual, el último intento de esa versión y los reinicios. Solo los administradores pueden descargar; la lectura es paginada para incluir todo el padrón y todos los intentos pertinentes.
+
+Validación de la exportación: `node --test tests/results-export.test.mjs`.
